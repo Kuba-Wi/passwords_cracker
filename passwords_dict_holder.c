@@ -6,7 +6,7 @@
 int read_password(passwords_dict_holder* holder, FILE* file) {
     size_t len = 0;
     char* placeholder = NULL;
-    char buf[100];
+    char buf[WORD_SIZE];
     int result = fscanf(file, "%s", buf);
     if (result <= 0) {
         return result;
@@ -56,7 +56,7 @@ int load_dictionary(passwords_dict_holder* holder, const char* filename) {
         printf("Loading dictionary failed.\n");
         return -1;
     }
-    char buffer[100];
+    char buffer[WORD_SIZE];
     int word_size = fscanf(file, "%s", buffer);
     while (word_size > 0) {
         holder->dictionary = (char**)realloc(holder->dictionary, ++holder->dict_size * sizeof(char*));

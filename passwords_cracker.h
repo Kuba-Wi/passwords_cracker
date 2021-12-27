@@ -5,7 +5,6 @@
 
 #include "passwords_dict_holder.h"
 
-#define WORD_SIZE 100
 #define PRODUCER_COUNT 3
 
 typedef struct _passwords_cracker {

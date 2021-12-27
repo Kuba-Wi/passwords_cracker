@@ -5,6 +5,7 @@
 
 #define PASSWORDS_COUNT 1000
 #define PASSWORD_SIZE 33
+#define WORD_SIZE 100
 
 typedef struct _passwords_dict_holder {
     char passwords[PASSWORDS_COUNT][PASSWORD_SIZE];

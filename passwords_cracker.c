@@ -41,7 +41,7 @@ void compare_word_with_passwords(passwords_cracker* cracker, char* word) {
 
             pthread_cond_signal(&cracker->cracked_passws_cv);
             pthread_mutex_unlock(&cracker->cracked_passws_mx);
-            }
+        }
     }
 }
 
@@ -52,15 +52,28 @@ void* producer_crack_passwords(void* c_args) {
         compare_word_with_passwords(args->cracker, args->cracker->passw_dict_holder.dictionary[i]);
     }
 
-    size_t number = 0;
+    size_t first_num, second_num;
+    size_t min = 0;
+    size_t max = 10;
     const size_t space_for_numbers = 50;
     char word[WORD_SIZE + space_for_numbers];
     while (1) {
-        for (size_t i = 0; i < get_dict_size(args->cracker); ++i) {
-            sprintf(word, "%ld%s%ld", number, args->cracker->passw_dict_holder.dictionary[i], number);
-            compare_word_with_passwords(args->cracker, word);
+        for (size_t i = args->begin; i < args->end; ++i) {
+            for (first_num = min; first_num < max; ++first_num) {
+                sprintf(word, "%ld%s", first_num, args->cracker->passw_dict_holder.dictionary[i]);
+                compare_word_with_passwords(args->cracker, word);
+
+                sprintf(word, "%s%ld", args->cracker->passw_dict_holder.dictionary[i], first_num);
+                compare_word_with_passwords(args->cracker, word);
+
+                for (second_num = min; second_num < max; ++second_num) {
+                    sprintf(word, "%ld%s%ld", first_num, args->cracker->passw_dict_holder.dictionary[i], second_num);
+                    compare_word_with_passwords(args->cracker, word);
+                }
+            }
         }
-        ++number;
+        min = max;
+        max *= 10;
     }
 
     free(args);
@@ -104,6 +117,7 @@ void deinit_cracker(passwords_cracker* cracker) {
     pthread_join(cracker->consumer_thread, NULL);
     pthread_mutex_destroy(&cracker->cracked_passws_mx);
     pthread_cond_destroy(&cracker->cracked_passws_cv);
+
     for (size_t i = 0; i < cracker->cracked_size; ++i) {
         free(cracker->cracked_passws[i]);
     }
@@ -116,11 +130,11 @@ void deinit_cracker(passwords_cracker* cracker) {
 }
 
 void load_passwords_and_dictionary(passwords_cracker* cracker) {
-    // char buffer[100];
+    char buffer[WORD_SIZE];
 
-    // printf("Input file with paswords:\n");
-    // scanf("%s", buffer);
-    int result = load_passwords(&cracker->passw_dict_holder, "../passwords1.txt");
+    printf("Input file with paswords:\n");
+    scanf("%s", buffer);
+    int result = load_passwords(&cracker->passw_dict_holder, buffer);
     if (result == -1) {
         printf("End of program\n");
         exit(EXIT_FAILURE);
