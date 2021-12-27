@@ -18,6 +18,18 @@ void bytes2md5(const char *data, int len, char *md5buf) {
     }
 }
 
+void compare_word_with_passwords(passwords_cracker* cracker, char* word) {
+    char md5[PASSWORD_SIZE];
+    bytes2md5(word, strlen(word), md5);
+    for (size_t j = 0; j < get_passwords_size(cracker); ++j) {
+        if (strcmp(cracker->cracked_passws[j], "") == 0) {
+            if (strcmp(cracker->passw_dict_holder.passwords[j], md5) == 0) {
+                strcpy(cracker->cracked_passws[j], word);
+            }
+        }
+    }
+}
+
 void init_cracker(passwords_cracker* cracker) {
     init_holder(&cracker->passw_dict_holder);
     for (size_t i = 0; i < PASSWORDS_COUNT; ++i) {
@@ -50,17 +62,25 @@ void load_passwords_and_dictionary(passwords_cracker* cracker) {
 }
 
 void crack_passwords(passwords_cracker* cracker) {
-    char md5[PASSWORD_SIZE];
-    char* dict_buf;
-    for (size_t i = 0; i < cracker->passw_dict_holder.dict_size; ++i) {
-        dict_buf = cracker->passw_dict_holder.dictionary[i];
-        bytes2md5(dict_buf, strlen(dict_buf), md5);
-        for (size_t j = 0; j < cracker->passw_dict_holder.passw_size; ++j) {
-            if (strcmp(cracker->cracked_passws[j], "") == 0) {
-                if (strcmp(cracker->passw_dict_holder.passwords[j], md5) == 0) {
-                    strcpy(cracker->cracked_passws[j], dict_buf);
-                }
-            }
-        }
+    for (size_t i = 0; i < get_dict_size(cracker); ++i) {
+        compare_word_with_passwords(cracker, cracker->passw_dict_holder.dictionary[i]);
     }
+
+    size_t number = 0;
+    char word[150];
+    while (1) {
+        for (size_t i = 0; i < get_dict_size(cracker); ++i) {
+            sprintf(word, "%ld%s%ld", number, cracker->passw_dict_holder.dictionary[i], number);
+            compare_word_with_passwords(cracker, word);
+        }
+        ++number;
+    }
+}
+
+size_t get_dict_size(passwords_cracker* cracker) {
+    return cracker->passw_dict_holder.dict_size;
+}
+
+size_t get_passwords_size(passwords_cracker* cracker) {
+    return cracker->passw_dict_holder.passw_size;
 }
