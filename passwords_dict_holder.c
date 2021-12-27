@@ -11,7 +11,10 @@ int read_password(passwords_dict_holder* holder, FILE* file) {
     if (result <= 0) {
         return result;
     }
-    fscanf(file, "%s", holder->passwords[holder->passw_size++]);
+    result = fscanf(file, "%s", holder->passwords[holder->passw_size++]);
+    if (result <= 0) {
+        return result;
+    }
     result = getline(&placeholder, &len, file);
     free(placeholder);
     return result;

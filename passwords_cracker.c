@@ -4,6 +4,12 @@
 #include <stdio.h>
 #include <string.h>
 
+typedef struct _crack_args {
+    passwords_cracker* cracker;
+    size_t begin;
+    size_t end;
+} crack_args;
+
 void bytes2md5(const char *data, int len, char *md5buf) {
     EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
     const EVP_MD *md = EVP_md5();
@@ -21,23 +27,91 @@ void bytes2md5(const char *data, int len, char *md5buf) {
 void compare_word_with_passwords(passwords_cracker* cracker, char* word) {
     char md5[PASSWORD_SIZE];
     bytes2md5(word, strlen(word), md5);
-    for (size_t j = 0; j < get_passwords_size(cracker); ++j) {
-        if (strcmp(cracker->cracked_passws[j], "") == 0) {
-            if (strcmp(cracker->passw_dict_holder.passwords[j], md5) == 0) {
-                strcpy(cracker->cracked_passws[j], word);
+    for (size_t i = 0; i < get_passwords_size(cracker); ++i) {
+        if (strcmp(cracker->passw_dict_holder.passwords[i], md5) == 0) {
+            pthread_mutex_lock(&cracker->cracked_passws_mx);
+
+            cracker->cracked_passws = realloc(cracker->cracked_passws, ++cracker->cracked_size * sizeof(char*));
+            cracker->cracked_passws[cracker->cracked_size - 1] = malloc(strlen(md5) + 1);
+            strcpy(cracker->cracked_passws[cracker->cracked_size - 1], md5);
+
+            cracker->cracked_dict = realloc(cracker->cracked_dict, cracker->cracked_size * sizeof(char*));
+            cracker->cracked_dict[cracker->cracked_size - 1] = malloc(strlen(word) + 1);
+            strcpy(cracker->cracked_dict[cracker->cracked_size - 1], word);
+
+            pthread_cond_signal(&cracker->cracked_passws_cv);
+            pthread_mutex_unlock(&cracker->cracked_passws_mx);
             }
-        }
     }
+}
+
+void* producer_crack_passwords(void* c_args) {
+    crack_args* args = (crack_args*)c_args;
+
+    for (size_t i = args->begin; i < args->end; ++i) {
+        compare_word_with_passwords(args->cracker, args->cracker->passw_dict_holder.dictionary[i]);
+    }
+
+    size_t number = 0;
+    const size_t space_for_numbers = 50;
+    char word[WORD_SIZE + space_for_numbers];
+    while (1) {
+        for (size_t i = 0; i < get_dict_size(args->cracker); ++i) {
+            sprintf(word, "%ld%s%ld", number, args->cracker->passw_dict_holder.dictionary[i], number);
+            compare_word_with_passwords(args->cracker, word);
+        }
+        ++number;
+    }
+
+    free(args);
+    return 0;
+}
+
+void* start_consumer_thread(void* crack) {
+    passwords_cracker* cracker = crack;
+
+    pthread_mutex_lock(&cracker->cracked_passws_mx);
+    while(1) {
+        while (cracker->last_size == cracker->cracked_size) {
+            pthread_cond_wait(&cracker->cracked_passws_cv, &cracker->cracked_passws_mx);
+        }
+        for (size_t i = cracker->last_size; i < cracker->cracked_size; ++i) {
+            printf("%s is %s\n", cracker->cracked_passws[i], 
+                                 cracker->cracked_dict[i]);
+        }
+
+        cracker->last_size = cracker->cracked_size;
+    }
+    pthread_mutex_unlock(&cracker->cracked_passws_mx);
+
+    return 0;
 }
 
 void init_cracker(passwords_cracker* cracker) {
     init_holder(&cracker->passw_dict_holder);
-    for (size_t i = 0; i < PASSWORDS_COUNT; ++i) {
-        strcpy(cracker->cracked_passws[i], "");
-    }
+    cracker->cracked_passws = NULL;
+    cracker->cracked_dict = NULL;
+    cracker->cracked_size = 0;
+    cracker->last_size = 0;
+    pthread_mutex_init(&cracker->cracked_passws_mx, NULL);
+    pthread_cond_init(&cracker->cracked_passws_cv, NULL);
 }
 
 void deinit_cracker(passwords_cracker* cracker) {
+    for (size_t i = 0; i < PRODUCER_COUNT; ++i) {
+        pthread_join(cracker->producer_threads[i], NULL);
+    }
+    pthread_join(cracker->consumer_thread, NULL);
+    pthread_mutex_destroy(&cracker->cracked_passws_mx);
+    pthread_cond_destroy(&cracker->cracked_passws_cv);
+    for (size_t i = 0; i < cracker->cracked_size; ++i) {
+        free(cracker->cracked_passws[i]);
+    }
+    free(cracker->cracked_passws);
+    for (size_t i = 0; i < cracker->cracked_size; ++i) {
+        free(cracker->cracked_dict[i]);
+    }
+    free(cracker->cracked_dict);
     deinit_holder(&cracker->passw_dict_holder);
 }
 
@@ -62,19 +136,20 @@ void load_passwords_and_dictionary(passwords_cracker* cracker) {
 }
 
 void crack_passwords(passwords_cracker* cracker) {
-    for (size_t i = 0; i < get_dict_size(cracker); ++i) {
-        compare_word_with_passwords(cracker, cracker->passw_dict_holder.dictionary[i]);
-    }
-
-    size_t number = 0;
-    char word[150];
-    while (1) {
-        for (size_t i = 0; i < get_dict_size(cracker); ++i) {
-            sprintf(word, "%ld%s%ld", number, cracker->passw_dict_holder.dictionary[i], number);
-            compare_word_with_passwords(cracker, word);
+    for (size_t i = 0; i < PRODUCER_COUNT; ++i) {
+        crack_args* args = malloc(sizeof(crack_args));
+        args->cracker = cracker;
+        args->begin = i * (get_dict_size(cracker) / PRODUCER_COUNT);
+        args->end = (i + 1) * (get_dict_size(cracker) / PRODUCER_COUNT);
+        if (i == PRODUCER_COUNT - 1) {
+            args->end += get_dict_size(cracker) % PRODUCER_COUNT;
         }
-        ++number;
+        pthread_create(&cracker->producer_threads[i], NULL, producer_crack_passwords, (void*)args);
     }
+}
+
+void start_consumer(passwords_cracker* cracker) {
+    pthread_create(&cracker->consumer_thread, NULL, start_consumer_thread, (void*)cracker);
 }
 
 size_t get_dict_size(passwords_cracker* cracker) {
