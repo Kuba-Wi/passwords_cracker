@@ -1,8 +1,13 @@
 #include "passwords_cracker.h"
 
 #include <openssl/evp.h>
+#include <signal.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+
+atomic_size_t AT_CRACKED_PASSWS = 0;
+size_t ALL_PASSWORDS = 0;
 
 typedef struct _crack_args {
     passwords_cracker* cracker;
@@ -46,6 +51,14 @@ void compare_word_with_passwords(passwords_cracker* cracker, char* word) {
 }
 
 void* producer_crack_passwords(void* c_args) {
+    sigset_t signal_mask;
+    sigemptyset(&signal_mask);
+    sigaddset(&signal_mask, SIGHUP);
+    int result = pthread_sigmask (SIG_BLOCK, &signal_mask, NULL);
+    if (result != 0) {
+        printf("Blocking SIGHUP on thread failed.\n");
+    }
+
     crack_args* args = (crack_args*)c_args;
 
     for (size_t i = args->begin; i < args->end; ++i) {
@@ -80,7 +93,22 @@ void* producer_crack_passwords(void* c_args) {
     return 0;
 }
 
+void sighup_handler(__attribute__((unused)) int signum) {
+    printf("Cracked passwords: %ld, passwords left: %ld\n", 
+           AT_CRACKED_PASSWS, 
+           ALL_PASSWORDS - AT_CRACKED_PASSWS);
+}
+
 void* start_consumer_thread(void* crack) {
+    struct sigaction signal_action;
+    signal_action.sa_handler = sighup_handler;
+    signal_action.sa_flags = 0;
+    sigemptyset(&signal_action.sa_mask);
+    int result = sigaction(SIGHUP, &signal_action, NULL);
+    if (result == -1) {
+        printf("Setting signal handler failed\n");
+    }
+
     passwords_cracker* cracker = crack;
 
     pthread_mutex_lock(&cracker->cracked_passws_mx);
@@ -92,7 +120,7 @@ void* start_consumer_thread(void* crack) {
             printf("%s is %s\n", cracker->cracked_passws[i], 
                                  cracker->cracked_dict[i]);
         }
-
+        AT_CRACKED_PASSWS = cracker->cracked_size;
         cracker->last_size = cracker->cracked_size;
     }
     pthread_mutex_unlock(&cracker->cracked_passws_mx);
@@ -133,20 +161,30 @@ void load_passwords_and_dictionary(passwords_cracker* cracker) {
     char buffer[WORD_SIZE];
 
     printf("Input file with paswords:\n");
-    scanf("%s", buffer);
-    int result = load_passwords(&cracker->passw_dict_holder, buffer);
+    int result = scanf("%s", buffer);
+    if (result == EOF) {
+        printf("Reading from input failed.\nEnd of program\n");
+        exit(EXIT_FAILURE);
+    }
+    result = load_passwords(&cracker->passw_dict_holder, buffer);
     if (result == -1) {
         printf("End of program\n");
         exit(EXIT_FAILURE);
     }
 
-    // printf("Input dictionary file:\n");
-    // scanf("%s", buffer);
-    result = load_dictionary(&cracker->passw_dict_holder, "../dictionary1.txt");
+    printf("Input dictionary file:\n");
+    result = scanf("%s", buffer);
+    if (result == EOF) {
+        printf("Reading from input failed.\nEnd of program\n");
+        exit(EXIT_FAILURE);
+    }
+    result = load_dictionary(&cracker->passw_dict_holder, buffer);
     if (result == -1) {
         printf("End of program\n");
         exit(EXIT_FAILURE);
     }
+
+    ALL_PASSWORDS = get_passwords_size(cracker);
 }
 
 void crack_passwords(passwords_cracker* cracker) {
