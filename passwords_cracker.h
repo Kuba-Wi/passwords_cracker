@@ -2,6 +2,7 @@
 #define PASSWORDS_CRACKER
 
 #include <pthread.h>
+#include <stdatomic.h>
 
 #include "passwords_dict_holder.h"
 
@@ -15,7 +16,9 @@ typedef struct _passwords_cracker {
     size_t last_size;
 
     pthread_t producer_threads[PRODUCER_COUNT];
+    atomic_bool producer_th_joinable[PRODUCER_COUNT];
     pthread_t consumer_thread;
+    atomic_bool consumer_th_joinable;
     pthread_cond_t cracked_passws_cv;
     pthread_mutex_t cracked_passws_mx;
 } passwords_cracker;

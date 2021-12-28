@@ -2,7 +2,7 @@
 
 #include <openssl/evp.h>
 #include <signal.h>
-#include <stdatomic.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -54,7 +54,7 @@ void* producer_crack_passwords(void* c_args) {
     sigset_t signal_mask;
     sigemptyset(&signal_mask);
     sigaddset(&signal_mask, SIGHUP);
-    int result = pthread_sigmask (SIG_BLOCK, &signal_mask, NULL);
+    int result = pthread_sigmask(SIG_BLOCK, &signal_mask, NULL);
     if (result != 0) {
         printf("Blocking SIGHUP on thread failed.\n");
     }
@@ -136,13 +136,23 @@ void init_cracker(passwords_cracker* cracker) {
     cracker->last_size = 0;
     pthread_mutex_init(&cracker->cracked_passws_mx, NULL);
     pthread_cond_init(&cracker->cracked_passws_cv, NULL);
+
+    for (size_t i = 0; i < PRODUCER_COUNT; ++i) {
+        cracker->producer_th_joinable[i] = false;
+    }
+    cracker->consumer_th_joinable = false;
 }
 
 void deinit_cracker(passwords_cracker* cracker) {
     for (size_t i = 0; i < PRODUCER_COUNT; ++i) {
-        pthread_join(cracker->producer_threads[i], NULL);
+        if (cracker->producer_th_joinable[i]) {
+            pthread_join(cracker->producer_threads[i], NULL);
+        }
     }
-    pthread_join(cracker->consumer_thread, NULL);
+    if (cracker->consumer_th_joinable) {
+        pthread_join(cracker->consumer_thread, NULL);
+    }
+
     pthread_mutex_destroy(&cracker->cracked_passws_mx);
     pthread_cond_destroy(&cracker->cracked_passws_cv);
 
@@ -196,12 +206,14 @@ void crack_passwords(passwords_cracker* cracker) {
         if (i == PRODUCER_COUNT - 1) {
             args->end += get_dict_size(cracker) % PRODUCER_COUNT;
         }
-        pthread_create(&cracker->producer_threads[i], NULL, producer_crack_passwords, (void*)args);
+        pthread_create(&cracker->producer_threads[i], NULL, producer_crack_passwords, args);
+        cracker->producer_th_joinable[i] = true;
     }
 }
 
 void start_consumer(passwords_cracker* cracker) {
-    pthread_create(&cracker->consumer_thread, NULL, start_consumer_thread, (void*)cracker);
+    pthread_create(&cracker->consumer_thread, NULL, start_consumer_thread, cracker);
+    cracker->consumer_th_joinable = true;
 }
 
 size_t get_dict_size(passwords_cracker* cracker) {
