@@ -1,5 +1,6 @@
 #include "passwords_cracker.h"
 
+#include <ctype.h>
 #include <openssl/evp.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -9,11 +10,21 @@
 atomic_size_t AT_CRACKED_PASSWS = 0;
 size_t ALL_PASSWORDS = 0;
 
-typedef struct _crack_args {
+typedef enum _string_transform_option {
+    all_lowercase,
+    all_capital,
+    first_capital
+} string_transform_option;
+
+typedef struct _crack1_word_args {
     passwords_cracker* cracker;
-    size_t begin;
-    size_t end;
-} crack_args;
+    string_transform_option trans_option;
+} crack1_word_args;
+
+typedef struct _crack2_word_args {
+    passwords_cracker* cracker;
+    char subchar;
+} crack2_word_args;
 
 void bytes2md5(const char *data, int len, char *md5buf) {
     EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
@@ -50,7 +61,7 @@ void compare_word_with_passwords(passwords_cracker* cracker, char* word) {
     }
 }
 
-void* producer_crack_passwords(void* c_args) {
+void block_sighup_signal() {
     sigset_t signal_mask;
     sigemptyset(&signal_mask);
     sigaddset(&signal_mask, SIGHUP);
@@ -58,35 +69,98 @@ void* producer_crack_passwords(void* c_args) {
     if (result != 0) {
         printf("Blocking SIGHUP on thread failed.\n");
     }
+}
 
-    crack_args* args = (crack_args*)c_args;
+// returns true on success and false on failure
+bool transform_word(char* word, string_transform_option trans_option) {
+    switch(trans_option) {
+        case all_lowercase:
+            for (size_t i = 0; i < strlen(word); ++i) {
+                word[i] = tolower(word[i]);
+            }
+            return true;
+            break;
+        case all_capital:
+            word[0] = toupper(word[0]);
+            bool has_at_least_one_alpha = false;
+            for (size_t i = 1; i < strlen(word); ++i) {
+                word[i] = toupper(word[i]);
+                if (isalpha(word[i]) > 0) {
+                    has_at_least_one_alpha = true;
+                }
+            }
+            return has_at_least_one_alpha;
+            break;
+        case first_capital:
+            if (isalpha(word[0]) == 0) {
+                return false;
+            }
+            word[0] = toupper(word[0]);
+            break;
+    };
+    return true;
+}
 
-    for (size_t i = args->begin; i < args->end; ++i) {
-        compare_word_with_passwords(args->cracker, args->cracker->passw_dict_holder.dictionary[i]);
-    }
+void* producer1_word_crack_passw(void* c_args) {
+    block_sighup_signal();
 
-    size_t first_num, second_num;
-    size_t min = 0;
-    size_t max = 10;
+    crack1_word_args* args = c_args;
     const size_t space_for_numbers = 50;
     char word[WORD_SIZE + space_for_numbers];
+
+    for (size_t i = 0; i < get_dict_size(args->cracker); ++i) {
+        strcpy(word, args->cracker->passw_dict_holder.dictionary[i]);
+        if (transform_word(word, args->trans_option)) {
+            compare_word_with_passwords(args->cracker, word);
+        }
+    }
+
+    char sub_word[WORD_SIZE];
+    size_t first, second;
+    size_t min = 0;
+    size_t max = 10;
     while (1) {
-        for (size_t i = args->begin; i < args->end; ++i) {
-            for (first_num = min; first_num < max; ++first_num) {
-                sprintf(word, "%ld%s", first_num, args->cracker->passw_dict_holder.dictionary[i]);
+        for (size_t i = 0; i < get_dict_size(args->cracker); ++i) {
+            strcpy(sub_word, args->cracker->passw_dict_holder.dictionary[i]);
+            if (!transform_word(sub_word, args->trans_option)) {
+                continue;
+            }
+            for (first = min; first < max; ++first) {
+                sprintf(word, "%ld%s", first, sub_word);
                 compare_word_with_passwords(args->cracker, word);
 
-                sprintf(word, "%s%ld", args->cracker->passw_dict_holder.dictionary[i], first_num);
+                sprintf(word, "%s%ld", sub_word, first);
                 compare_word_with_passwords(args->cracker, word);
 
-                for (second_num = min; second_num < max; ++second_num) {
-                    sprintf(word, "%ld%s%ld", first_num, args->cracker->passw_dict_holder.dictionary[i], second_num);
+                for (second = min; second < max; ++second) {
+                    sprintf(word, "%ld%s%ld", first, sub_word, second);
                     compare_word_with_passwords(args->cracker, word);
                 }
             }
         }
         min = max;
         max *= 10;
+    }
+
+    free(args);
+    return 0;
+}
+
+void* producer2_word_crack_passw(void* c_args) {
+    block_sighup_signal();
+
+    char word[2 * WORD_SIZE];
+    crack2_word_args* args = c_args;
+    for (size_t i = 0; i < get_dict_size(args->cracker); ++i) {
+        for (size_t j = 0; j < get_dict_size(args->cracker); ++j) {
+            sprintf(word, 
+                    "%s%c%s", 
+                    args->cracker->passw_dict_holder.dictionary[i],
+                    args->subchar,
+                    args->cracker->passw_dict_holder.dictionary[j]);
+            
+            compare_word_with_passwords(args->cracker, word);
+        }
     }
 
     free(args);
@@ -138,15 +212,19 @@ void init_cracker(passwords_cracker* cracker) {
     pthread_cond_init(&cracker->cracked_passws_cv, NULL);
 
     for (size_t i = 0; i < PRODUCER_COUNT; ++i) {
-        cracker->producer_th_joinable[i] = false;
+        cracker->producer1_th_joinable[i] = false;
+        cracker->producer2_th_joinable[i] = false;
     }
     cracker->consumer_th_joinable = false;
 }
 
 void deinit_cracker(passwords_cracker* cracker) {
     for (size_t i = 0; i < PRODUCER_COUNT; ++i) {
-        if (cracker->producer_th_joinable[i]) {
-            pthread_join(cracker->producer_threads[i], NULL);
+        if (cracker->producer1_th_joinable[i]) {
+            pthread_join(cracker->producer1_word_th[i], NULL);
+        }
+        if (cracker->producer2_th_joinable[i]) {
+            pthread_join(cracker->producer2_word_th[i], NULL);
         }
     }
     if (cracker->consumer_th_joinable) {
@@ -198,16 +276,23 @@ void load_passwords_and_dictionary(passwords_cracker* cracker) {
 }
 
 void crack_passwords(passwords_cracker* cracker) {
+    string_transform_option trans_option[PRODUCER_COUNT] = {all_lowercase, all_capital, first_capital};
     for (size_t i = 0; i < PRODUCER_COUNT; ++i) {
-        crack_args* args = malloc(sizeof(crack_args));
+        crack1_word_args* args = malloc(sizeof(crack1_word_args));
         args->cracker = cracker;
-        args->begin = i * (get_dict_size(cracker) / PRODUCER_COUNT);
-        args->end = (i + 1) * (get_dict_size(cracker) / PRODUCER_COUNT);
-        if (i == PRODUCER_COUNT - 1) {
-            args->end += get_dict_size(cracker) % PRODUCER_COUNT;
-        }
-        pthread_create(&cracker->producer_threads[i], NULL, producer_crack_passwords, args);
-        cracker->producer_th_joinable[i] = true;
+        args->trans_option = trans_option[i];
+        pthread_create(&cracker->producer1_word_th[i], NULL, producer1_word_crack_passw, args);
+        cracker->producer1_th_joinable[i] = true;
+    }
+
+    char subchar[PRODUCER_COUNT] = {' ', ';', ':'};
+    for (size_t i = 0; i < PRODUCER_COUNT; ++i) {
+        crack2_word_args* args = malloc(sizeof(crack2_word_args));
+        args->cracker = cracker;
+        args->subchar = subchar[i];
+
+        pthread_create(&cracker->producer2_word_th[i], NULL, producer2_word_crack_passw, args);
+        cracker->producer2_th_joinable[i] = true;
     }
 }
 
