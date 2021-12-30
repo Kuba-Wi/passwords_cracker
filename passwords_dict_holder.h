@@ -15,7 +15,8 @@ typedef struct _passwords_dict_holder {
 } passwords_dict_holder;
 
 void init_holder(passwords_dict_holder* holder);
-void deinit_holder(passwords_dict_holder* holder);
+void reinit_with_old_dict(passwords_dict_holder* holder);
+void free_dictionary(passwords_dict_holder* holder);
 int load_passwords(passwords_dict_holder* d_reader, const char* filename);
 int load_dictionary(passwords_dict_holder* d_reader, const char* filename);
 

@@ -26,7 +26,11 @@ void init_holder(passwords_dict_holder* holder) {
     holder->passw_size = 0;
 }
 
-void deinit_holder(passwords_dict_holder* holder) {
+void reinit_with_old_dict(passwords_dict_holder* holder) {
+    holder->passw_size = 0;
+}
+
+void free_dictionary(passwords_dict_holder* holder) {
     for (size_t i = 0; i < holder->dict_size; ++i) {
         free(holder->dictionary[i]);
     }
