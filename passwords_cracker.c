@@ -61,13 +61,13 @@ void compare_word_with_passwords(passwords_cracker* cracker, char* word) {
     }
 }
 
-void block_sighup_signal() {
+void mask_sighup_signal(int option) {
     sigset_t signal_mask;
     sigemptyset(&signal_mask);
     sigaddset(&signal_mask, SIGHUP);
-    int result = pthread_sigmask(SIG_BLOCK, &signal_mask, NULL);
+    int result = pthread_sigmask(option, &signal_mask, NULL);
     if (result != 0) {
-        printf("Blocking SIGHUP on thread failed.\n");
+        printf("Masking SIGHUP with option %d failed.\n", option);
     }
 }
 
@@ -102,8 +102,6 @@ bool transform_word(char* word, string_transform_option trans_option) {
 }
 
 void* producer1_word_crack_passw(void* c_args) {
-    block_sighup_signal();
-
     crack1_word_args* args = c_args;
     const size_t space_for_numbers = 50;
     char word[WORD_SIZE + space_for_numbers];
@@ -147,8 +145,6 @@ void* producer1_word_crack_passw(void* c_args) {
 }
 
 void* producer2_word_crack_passw(void* c_args) {
-    block_sighup_signal();
-
     char word[2 * WORD_SIZE];
     crack2_word_args* args = c_args;
     for (size_t i = 0; i < get_dict_size(args->cracker) && !args->cracker->stop_threads; ++i) {
@@ -174,6 +170,8 @@ void sighup_handler(__attribute__((unused)) int signum) {
 }
 
 void* start_consumer_thread(void* crack) {
+    mask_sighup_signal(SIG_UNBLOCK);
+
     struct sigaction signal_action;
     signal_action.sa_handler = sighup_handler;
     signal_action.sa_flags = SA_RESTART; // makes that reading from input (scanf) on main thread isn't interrupted when receiving signal
@@ -226,6 +224,7 @@ void init_only_cracker(passwords_cracker* cracker) {
 }
 
 void init_cracker(passwords_cracker* cracker) {
+    mask_sighup_signal(SIG_BLOCK);
     init_holder(&cracker->passw_dict_holder);
     init_only_cracker(cracker);
 }
