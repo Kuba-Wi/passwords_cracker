@@ -1,5 +1,4 @@
-#ifndef PASSWORDS_DICT_HOLDER
-#define PASSWORDS_DICT_HOLDER
+#pragma once
 
 #include <stdlib.h>
 
@@ -19,5 +18,3 @@ void reinit_with_old_dict(passwords_dict_holder* holder);
 void free_dictionary(passwords_dict_holder* holder);
 int load_passwords(passwords_dict_holder* d_reader, const char* filename);
 int load_dictionary(passwords_dict_holder* d_reader, const char* filename);
-
-#endif

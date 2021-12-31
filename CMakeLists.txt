@@ -5,11 +5,7 @@ project(password_cracker)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-set(FILES
-    main.c
-    passwords_dict_holder.c
-    passwords_cracker.c
-)
+file(GLOB FILES src/*.c)
 
 set(COMPILE_FLAGS -Wall -pedantic -Wextra)
 
