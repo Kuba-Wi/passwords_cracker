@@ -34,6 +34,5 @@ void load_passwords_from_file(passwords_cracker* cracker, char* filename);
 void load_passwords_and_dictionary(passwords_cracker* cracker);
 void crack_passwords(passwords_cracker* cracker);
 void start_consumer(passwords_cracker* cracker);
-void stop_threads(passwords_cracker* cracker);
 size_t get_dict_size(passwords_cracker* cracker);
 size_t get_passwords_size(passwords_cracker* cracker);

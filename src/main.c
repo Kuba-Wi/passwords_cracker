@@ -18,7 +18,7 @@ int main() {
             printf("Reading from input failed.\nEnd of program\n");
             exit(EXIT_FAILURE);
         }
-        stop_threads(&cracker);
+
         deinit_without_dictionary(&cracker);
         reinit_cracker_with_old_dict(&cracker);
 
@@ -28,7 +28,6 @@ int main() {
 
         result = scanf("%s", buffer);
     }
-    stop_threads(&cracker);
 
     deinit_cracker(&cracker);
 }

@@ -205,6 +205,13 @@ void* start_consumer_thread(void* crack) {
     return 0;
 }
 
+void stop_threads(passwords_cracker* cracker) {
+    pthread_mutex_lock(&cracker->cracked_passws_mx);
+    cracker->stop_threads = true;
+    pthread_cond_signal(&cracker->cracked_passws_cv);
+    pthread_mutex_unlock(&cracker->cracked_passws_mx);
+}
+
 void init_only_cracker(passwords_cracker* cracker) {
     cracker->cracked_passws = NULL;
     cracker->cracked_dict = NULL;
@@ -235,6 +242,8 @@ void reinit_cracker_with_old_dict(passwords_cracker* cracker) {
 }
 
 void deinit_without_dictionary(passwords_cracker* cracker) {
+    stop_threads(cracker);
+
     for (size_t i = 0; i < PRODUCER_COUNT; ++i) {
         if (cracker->producer1_th_joinable[i]) {
             pthread_join(cracker->producer1_word_th[i], NULL);
@@ -329,13 +338,6 @@ void crack_passwords(passwords_cracker* cracker) {
 void start_consumer(passwords_cracker* cracker) {
     pthread_create(&cracker->consumer_thread, NULL, start_consumer_thread, cracker);
     cracker->consumer_th_joinable = true;
-}
-
-void stop_threads(passwords_cracker* cracker) {
-    pthread_mutex_lock(&cracker->cracked_passws_mx);
-    cracker->stop_threads = true;
-    pthread_cond_signal(&cracker->cracked_passws_cv);
-    pthread_mutex_unlock(&cracker->cracked_passws_mx);
 }
 
 size_t get_dict_size(passwords_cracker* cracker) {
