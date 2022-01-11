@@ -9,6 +9,7 @@
 
 typedef struct _passwords_cracker {
     passwords_dict_holder passw_dict_holder;
+    atomic_bool is_password_cracked[PASSWORDS_COUNT];
     char** cracked_passws;
     char** cracked_dict;
     size_t cracked_size;

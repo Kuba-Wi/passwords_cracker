@@ -44,19 +44,22 @@ void compare_word_with_passwords(passwords_cracker* cracker, char* word) {
     char md5[PASSWORD_SIZE];
     bytes2md5(word, strlen(word), md5);
     for (size_t i = 0; i < get_passwords_size(cracker); ++i) {
-        if (strcmp(cracker->passw_dict_holder.passwords[i], md5) == 0) {
-            pthread_mutex_lock(&cracker->cracked_passws_mx);
+        if (!cracker->is_password_cracked[i]) {
+            if (strcmp(cracker->passw_dict_holder.passwords[i], md5) == 0) {
+                cracker->is_password_cracked[i] = true;
 
-            cracker->cracked_passws = realloc(cracker->cracked_passws, ++cracker->cracked_size * sizeof(char*));
-            cracker->cracked_passws[cracker->cracked_size - 1] = malloc(strlen(md5) + 1);
-            strcpy(cracker->cracked_passws[cracker->cracked_size - 1], md5);
+                pthread_mutex_lock(&cracker->cracked_passws_mx);
+                cracker->cracked_passws = realloc(cracker->cracked_passws, ++cracker->cracked_size * sizeof(char*));
+                cracker->cracked_passws[cracker->cracked_size - 1] = malloc(strlen(md5) + 1);
+                strcpy(cracker->cracked_passws[cracker->cracked_size - 1], md5);
 
-            cracker->cracked_dict = realloc(cracker->cracked_dict, cracker->cracked_size * sizeof(char*));
-            cracker->cracked_dict[cracker->cracked_size - 1] = malloc(strlen(word) + 1);
-            strcpy(cracker->cracked_dict[cracker->cracked_size - 1], word);
+                cracker->cracked_dict = realloc(cracker->cracked_dict, cracker->cracked_size * sizeof(char*));
+                cracker->cracked_dict[cracker->cracked_size - 1] = malloc(strlen(word) + 1);
+                strcpy(cracker->cracked_dict[cracker->cracked_size - 1], word);
 
-            pthread_cond_signal(&cracker->cracked_passws_cv);
-            pthread_mutex_unlock(&cracker->cracked_passws_mx);
+                pthread_cond_signal(&cracker->cracked_passws_cv);
+                pthread_mutex_unlock(&cracker->cracked_passws_mx);
+            }
         }
     }
 }
@@ -226,6 +229,10 @@ void init_only_cracker(passwords_cracker* cracker) {
     }
     cracker->consumer_th_joinable = false;
     cracker->stop_threads = false;
+
+    for (size_t i = 0; i < PASSWORDS_COUNT; ++i) {
+        cracker->is_password_cracked[i] = false;
+    }
 
     AT_CRACKED_PASSWS = 0;
 }
